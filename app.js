@@ -1,183 +1,28 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import { PORT } from './src/config.js';
+import { connectDb } from './src/db.js';
+import { seedAdmin } from './src/seed.js';
+import { cors } from './src/middleware/cors.js';
+import authRouter from './src/routes/auth.js';
+import historyRouter from './src/routes/history.js';
 
-const PORT = process.env.PORT ?? 3001;
-const JWT_SECRET = process.env.JWT_SECRET ?? 'raptor-dev-secret-change-in-prod';
-const JWT_EXPIRES_IN = '7d';
-
-// ---------------------------------------------------------------------------
-// In-memory user store. Seed via ADMIN_EMAIL / ADMIN_PASSWORD env vars,
-// or use the defaults below for local development only.
-// ---------------------------------------------------------------------------
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@raptor.local';
-const ADMIN_PASSWORD_PLAIN = process.env.ADMIN_PASSWORD ?? 'raptor123';
-const ADMIN_HASH = bcrypt.hashSync(ADMIN_PASSWORD_PLAIN, 10);
-
-const USERS = [
-  { id: '1', email: ADMIN_EMAIL, passwordHash: ADMIN_HASH, displayName: 'Admin' },
-];
-
-// ---------------------------------------------------------------------------
-// App
-// ---------------------------------------------------------------------------
 const app = express();
 app.use(express.json());
-
-app.use((_, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN ?? 'http://localhost:5173');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  next();
-});
-
+app.use(cors);
 app.options('*', (_, res) => res.sendStatus(204));
 
-// ---------------------------------------------------------------------------
-// Rate limiting — auth endpoints only
-// Max 10 attempts per IP per 15-minute window (in-memory, resets on restart)
-// ---------------------------------------------------------------------------
-const AUTH_LIMIT = 10;
-const AUTH_WINDOW_MS = 15 * 60 * 1000;
-const authAttempts = new Map();
-
-function rateLimit(req, res, next) {
-  const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
-  const now = Date.now();
-  const entry = authAttempts.get(ip);
-
-  if (!entry || now - entry.windowStart > AUTH_WINDOW_MS) {
-    authAttempts.set(ip, { count: 1, windowStart: now });
-    return next();
-  }
-
-  if (entry.count >= AUTH_LIMIT) {
-    return res.status(429).json({ error: 'Too many attempts. Please try again later.' });
-  }
-
-  entry.count += 1;
-  next();
-}
-
-// ---------------------------------------------------------------------------
-// Auth middleware
-// ---------------------------------------------------------------------------
-function requireAuth(req, res, next) {
-  const header = req.headers['authorization'];
-  if (!header?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid Authorization header.' });
-  }
-  try {
-    req.user = jwt.verify(header.slice(7), JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ error: 'Token expired or invalid.' });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
 app.get('/', (_, res) => res.json({ message: 'Raptor Chatbot Server is running.' }));
+app.use('/auth/history', historyRouter);
+app.use('/auth', authRouter);
 
-app.post('/auth/login', rateLimit, (req, res) => {
-  const { email, password } = req.body ?? {};
-
-  if (typeof email !== 'string' || typeof password !== 'string') {
-    return res.status(400).json({ error: 'email and password are required.' });
-  }
-
-  const user = USERS.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
-    return res.status(401).json({ error: 'Invalid credentials.' });
-  }
-
-  const token = jwt.sign(
-    { sub: user.id, email: user.email, displayName: user.displayName },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN },
-  );
-
-  res.json({ token, displayName: user.displayName, email: user.email });
-});
-
-app.post('/auth/register', rateLimit, (req, res) => {
-  const { email, password, displayName } = req.body ?? {};
-
-  if (typeof email !== 'string' || typeof password !== 'string' || typeof displayName !== 'string') {
-    return res.status(400).json({ error: 'email, password and displayName are required.' });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-    return res.status(400).json({ error: 'Invalid email format.' });
-  }
-
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
-  }
-
-  if (displayName.trim().length < 2) {
-    return res.status(400).json({ error: 'Display name must be at least 2 characters.' });
-  }
-
-  if (USERS.find(u => u.email.toLowerCase() === normalizedEmail)) {
-    return res.status(409).json({ error: 'Email already registered.' });
-  }
-
-  const newUser = {
-    id: String(Date.now()),
-    email: normalizedEmail,
-    passwordHash: bcrypt.hashSync(password, 10),
-    displayName: displayName.trim(),
-  };
-
-  USERS.push(newUser);
-
-  const token = jwt.sign(
-    { sub: newUser.id, email: newUser.email, displayName: newUser.displayName },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN },
-  );
-
-  res.status(201).json({ token, displayName: newUser.displayName, email: newUser.email });
-});
-
-app.get('/auth/me', requireAuth, (req, res) => {
-  res.json({ sub: req.user.sub, email: req.user.email, displayName: req.user.displayName });
-});
-
-// ---------------------------------------------------------------------------
-// Translation history — per-user, in-memory
-// ---------------------------------------------------------------------------
-const HISTORY = new Map(); // userId → [{ userMessage, botResponse, model, timestamp }]
-
-function getUserHistory(userId) {
-  if (!HISTORY.has(userId)) HISTORY.set(userId, []);
-  return HISTORY.get(userId);
-}
-
-app.get('/auth/history', requireAuth, (req, res) => {
-  res.json(getUserHistory(req.user.sub));
-});
-
-app.post('/auth/history', requireAuth, (req, res) => {
-  const { userMessage, botResponse, model } = req.body ?? {};
-  if (typeof userMessage !== 'string' || typeof botResponse !== 'string') {
-    return res.status(400).json({ error: 'userMessage and botResponse are required.' });
-  }
-  const entry = { userMessage, botResponse, model: model ?? null, timestamp: new Date().toISOString() };
-  getUserHistory(req.user.sub).push(entry);
-  res.status(201).json(entry);
-});
-
-app.delete('/auth/history', requireAuth, (req, res) => {
-  HISTORY.set(req.user.sub, []);
-  res.status(204).end();
-});
-
-// ---------------------------------------------------------------------------
-app.listen(PORT, () => {
-  console.log(`raptor-chatbot-server running on http://localhost:${PORT}`);
-});
+connectDb()
+  .then(async () => {
+    await seedAdmin();
+    app.listen(PORT, () => {
+      console.log(`raptor-chatbot-server running on http://localhost:${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('[boot] Fatal error:', err.message);
+    process.exit(1);
+  });
