@@ -16,9 +16,9 @@ Listens on **port 3001** by default. The `raptor-chatbot-web` Vite proxy forward
 
 ## Architecture
 
-Single-file Express application (`app.js`).
+Express application (`app.js` entry point, routes split under `src/`). Backed by **MongoDB via Mongoose**.
 
-**User store:** In-memory `USERS` array, pre-seeded from env vars. All data is lost on restart — no persistence.
+**User store:** MongoDB `User` model. Seeded with one admin user from env vars on startup — data persists across restarts.
 
 **Auth flow:**
 1. Client POSTs to `/auth/login` or `/auth/register`
@@ -31,9 +31,15 @@ Single-file Express application (`app.js`).
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `GET` | `/` | No | Health check |
-| `POST` | `/auth/login` | No | `{ email, password }` → `{ token, email, displayName }` |
-| `POST` | `/auth/register` | No | `{ email, password, displayName }` → `{ token, email, displayName }` |
+| `POST` | `/auth/login` | No | `{ email, password }` → `{ token, email, displayName, discordUsername }` |
+| `POST` | `/auth/register` | No | `{ email, password, displayName }` → `{ token, email, displayName, discordUsername }` |
 | `GET` | `/auth/me` | Bearer JWT | Returns authenticated user profile |
+| `PUT` | `/auth/profile` | Bearer JWT | Update `discordUsername` |
+| `GET` | `/auth/history` | Bearer JWT | List all history entries |
+| `POST` | `/auth/history` | Bearer JWT | Save history entry (source: web) |
+| `DELETE` | `/auth/history` | Bearer JWT | Delete all history for user |
+| `GET` | `/auth/history/stream` | JWT query param | SSE stream — pushes `history:new` events |
+| `POST` | `/discord/history` | X-Bot-Secret | Save history entry linked by discordUsername |
 
 ## Environment Variables
 
@@ -44,14 +50,16 @@ Single-file Express application (`app.js`).
 | `ADMIN_EMAIL` | `admin@raptor.local` | Pre-seeded admin email |
 | `ADMIN_PASSWORD` | `raptor123` | Pre-seeded admin password |
 | `CORS_ORIGIN` | `http://localhost:5173` | Allowed CORS origin |
+| `DISCORD_BOT_SECRET` | `raptor-bot-secret-change-in-prod` | Shared secret for bot→server auth |
+| `DB_PATH` | `./data` | MongoDB data directory path |
 
 ## Key Conventions
 
-**Single-file app.** Keep all logic in `app.js` unless explicitly asked to split.
+**Multi-file structure.** Entry is `app.js`; routes in `src/routes/`, models in `src/models/`, middleware in `src/middleware/`.
 
 **ESM modules.** `import`/`export` only — never `require`.
 
-**In-memory store.** `USERS` resets on restart — do not introduce persistence without discussion.
+**MongoDB persistence.** User data and history persist via Mongoose. Do not reintroduce in-memory state.
 
 **Passwords always hashed.** Use `bcryptjs` — never store or log plain-text passwords.
 
