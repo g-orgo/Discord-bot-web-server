@@ -26,7 +26,7 @@ app.use(express.json());
 
 app.use((_, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN ?? 'http://localhost:5173');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 });
@@ -146,6 +146,35 @@ app.post('/auth/register', rateLimit, (req, res) => {
 
 app.get('/auth/me', requireAuth, (req, res) => {
   res.json({ sub: req.user.sub, email: req.user.email, displayName: req.user.displayName });
+});
+
+// ---------------------------------------------------------------------------
+// Translation history — per-user, in-memory
+// ---------------------------------------------------------------------------
+const HISTORY = new Map(); // userId → [{ userMessage, botResponse, model, timestamp }]
+
+function getUserHistory(userId) {
+  if (!HISTORY.has(userId)) HISTORY.set(userId, []);
+  return HISTORY.get(userId);
+}
+
+app.get('/auth/history', requireAuth, (req, res) => {
+  res.json(getUserHistory(req.user.sub));
+});
+
+app.post('/auth/history', requireAuth, (req, res) => {
+  const { userMessage, botResponse, model } = req.body ?? {};
+  if (typeof userMessage !== 'string' || typeof botResponse !== 'string') {
+    return res.status(400).json({ error: 'userMessage and botResponse are required.' });
+  }
+  const entry = { userMessage, botResponse, model: model ?? null, timestamp: new Date().toISOString() };
+  getUserHistory(req.user.sub).push(entry);
+  res.status(201).json(entry);
+});
+
+app.delete('/auth/history', requireAuth, (req, res) => {
+  HISTORY.set(req.user.sub, []);
+  res.status(204).end();
 });
 
 // ---------------------------------------------------------------------------
