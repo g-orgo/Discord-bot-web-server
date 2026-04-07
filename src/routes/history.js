@@ -1,8 +1,42 @@
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import { HistoryEntry } from '../models/HistoryEntry.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { addClient, removeClient, emitToUser } from '../sse.js';
+import { JWT_SECRET } from '../config.js';
 
 const router = Router();
+
+router.get('/stream', (req, res) => {
+  // EventSource cannot send headers — accept token as query param for this endpoint only
+  const token = req.query.token;
+  if (!token) return res.status(401).end();
+
+  let user;
+  try {
+    user = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(401).end();
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  addClient(user.sub, res);
+
+  // Keep-alive ping every 25s to prevent proxy/browser timeouts
+  const ping = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch { /* ignore */ }
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(ping);
+    removeClient(user.sub, res);
+  });
+});
 
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -13,6 +47,7 @@ router.get('/', requireAuth, async (req, res) => {
       userMessage: e.userMessage,
       botResponse: e.botResponse,
       model: e.model,
+      source: e.source ?? 'web',
       timestamp: e.createdAt,
     })));
   } catch {
@@ -32,6 +67,7 @@ router.post('/', requireAuth, async (req, res) => {
       botResponse,
       model: model ?? null,
     });
+    emitToUser(req.user.sub, 'history:new', { source: 'web' });
     res.status(201).json({
       userMessage: entry.userMessage,
       botResponse: entry.botResponse,

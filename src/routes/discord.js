@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { User } from '../models/User.js';
 import { HistoryEntry } from '../models/HistoryEntry.js';
 import { requireBotKey } from '../middleware/requireBotKey.js';
+import { emitToUser } from '../sse.js';
 
 const router = Router();
 
@@ -15,13 +16,14 @@ router.post('/history', requireBotKey, async (req, res) => {
   const { discordUsername, userMessage, botResponse, model } = req.body ?? {};
 
   if (typeof discordUsername !== 'string' || typeof userMessage !== 'string' || typeof botResponse !== 'string') {
+    console.warn(`[discord/history] Validation failed — types: discordUsername=${typeof discordUsername}, userMessage=${typeof userMessage}, botResponse=${typeof botResponse}`);
     return res.status(400).json({ error: 'discordUsername, userMessage and botResponse are required.' });
   }
 
   try {
     const user = await User.findOne({ discordUsername: { $regex: new RegExp(`^${discordUsername.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }).lean();
     if (!user) {
-      // No linked account — silently ignore (not an error from the bot's perspective)
+      console.warn(`[discord/history] No user found with discordUsername: "${discordUsername.trim()}"`);
       return res.status(204).end();
     }
 
@@ -30,10 +32,13 @@ router.post('/history', requireBotKey, async (req, res) => {
       userMessage,
       botResponse,
       model: model ?? null,
+      source: 'discord',
     });
 
+    emitToUser(user._id.toString(), 'history:new', { source: 'discord' });
     res.status(204).end();
-  } catch {
+  } catch (err) {
+    console.error(`[discord/history] Unexpected error:`, err);
     res.status(500).json({ error: 'Internal server error.' });
   }
 });
