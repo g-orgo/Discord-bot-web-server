@@ -5,6 +5,7 @@ import { seedAdmin } from './src/seed.js';
 import { cors } from './src/middleware/cors.js';
 import authRouter from './src/routes/auth.js';
 import historyRouter from './src/routes/history.js';
+import discordRouter from './src/routes/discord.js';
 
 const app = express();
 app.use(express.json());
@@ -14,6 +15,7 @@ app.options('*', (_, res) => res.sendStatus(204));
 app.get('/', (_, res) => res.json({ message: 'Raptor Chatbot Server is running.' }));
 app.use('/auth/history', historyRouter);
 app.use('/auth', authRouter);
+app.use('/discord', discordRouter);
 
 connectDb()
   .then(async () => {

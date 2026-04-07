@@ -27,7 +27,7 @@ router.post('/login', rateLimit, async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN },
     );
 
-    res.json({ token, displayName: user.displayName, email: user.email });
+    res.json({ token, displayName: user.displayName, email: user.email, discordUsername: user.discordUsername ?? null });
   } catch {
     res.status(500).json({ error: 'Internal server error.' });
   }
@@ -64,7 +64,7 @@ router.post('/register', rateLimit, async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN },
     );
 
-    res.status(201).json({ token, displayName: user.displayName, email: user.email });
+    res.status(201).json({ token, displayName: user.displayName, email: user.email, discordUsername: null });
   } catch (err) {
     if (err.code === 11000) {
       return res.status(409).json({ error: 'Email already registered.' });
@@ -73,8 +73,45 @@ router.post('/register', rateLimit, async (req, res) => {
   }
 });
 
-router.get('/me', requireAuth, (req, res) => {
-  res.json({ sub: req.user.sub, email: req.user.email, displayName: req.user.displayName });
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.sub).lean();
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    res.json({ sub: req.user.sub, email: user.email, displayName: user.displayName, discordUsername: user.discordUsername ?? null });
+  } catch {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+router.put('/profile', requireAuth, async (req, res) => {
+  const { discordUsername } = req.body ?? {};
+
+  if (discordUsername !== null && typeof discordUsername !== 'string') {
+    return res.status(400).json({ error: 'discordUsername must be a string or null.' });
+  }
+
+  const trimmed = typeof discordUsername === 'string' ? discordUsername.trim() : null;
+
+  if (trimmed !== null && trimmed.length < 2) {
+    return res.status(400).json({ error: 'discordUsername must be at least 2 characters.' });
+  }
+
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.sub,
+      { discordUsername: trimmed || null },
+      { new: true },
+    ).lean();
+
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    res.json({ discordUsername: user.discordUsername ?? null });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: 'Discord username already linked to another account.' });
+    }
+    res.status(500).json({ error: 'Internal server error.' });
+  }
 });
 
 export default router;
