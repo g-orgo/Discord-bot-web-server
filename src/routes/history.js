@@ -44,6 +44,7 @@ router.get('/', requireAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
     res.json(entries.map(e => ({
+      id: e._id.toString(),
       userMessage: e.userMessage,
       botResponse: e.botResponse,
       model: e.model,
@@ -77,6 +78,24 @@ router.post('/', requireAuth, async (req, res) => {
       timestamp: entry.createdAt,
       sessionId: entry.sessionId ?? null,
     });
+  } catch {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+router.patch('/:id/session', requireAuth, async (req, res) => {
+  const { sessionId } = req.body ?? {};
+  if (typeof sessionId !== 'string' || !sessionId) {
+    return res.status(400).json({ error: 'sessionId must be a non-empty string.' });
+  }
+  try {
+    const entry = await HistoryEntry.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.sub },
+      { sessionId },
+      { new: true }
+    );
+    if (!entry) return res.status(404).json({ error: 'Entry not found.' });
+    res.json({ id: entry._id.toString(), sessionId: entry.sessionId });
   } catch {
     res.status(500).json({ error: 'Internal server error.' });
   }
