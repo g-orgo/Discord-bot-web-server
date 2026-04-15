@@ -6,6 +6,7 @@ const historySchema = new mongoose.Schema({
   botResponse: { type: String, required: true },
   model: { type: String, default: null },
   source: { type: String, enum: ['web', 'discord'], default: 'web' },
+  sessionId: { type: String, default: null, index: true },
 }, { timestamps: true });
 
 export const HistoryEntry = mongoose.model('HistoryEntry', historySchema);

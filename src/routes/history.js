@@ -49,6 +49,7 @@ router.get('/', requireAuth, async (req, res) => {
       model: e.model,
       source: e.source ?? 'web',
       timestamp: e.createdAt,
+      sessionId: e.sessionId ?? null,
     })));
   } catch {
     res.status(500).json({ error: 'Internal server error.' });
@@ -56,7 +57,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 router.post('/', requireAuth, async (req, res) => {
-  const { userMessage, botResponse, model } = req.body ?? {};
+  const { userMessage, botResponse, model, sessionId } = req.body ?? {};
   if (typeof userMessage !== 'string' || typeof botResponse !== 'string') {
     return res.status(400).json({ error: 'userMessage and botResponse are required.' });
   }
@@ -66,6 +67,7 @@ router.post('/', requireAuth, async (req, res) => {
       userMessage,
       botResponse,
       model: model ?? null,
+      sessionId: typeof sessionId === 'string' ? sessionId : null,
     });
     emitToUser(req.user.sub, 'history:new', { source: 'web' });
     res.status(201).json({
@@ -73,6 +75,7 @@ router.post('/', requireAuth, async (req, res) => {
       botResponse: entry.botResponse,
       model: entry.model,
       timestamp: entry.createdAt,
+      sessionId: entry.sessionId ?? null,
     });
   } catch {
     res.status(500).json({ error: 'Internal server error.' });
