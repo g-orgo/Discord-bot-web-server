@@ -101,6 +101,25 @@ router.patch('/:id/session', requireAuth, async (req, res) => {
   }
 });
 
+router.delete('/session/:sessionId', requireAuth, async (req, res) => {
+  try {
+    await HistoryEntry.deleteMany({ userId: req.user.sub, sessionId: req.params.sessionId });
+    res.status(204).end();
+  } catch {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+router.delete('/entry/:id', requireAuth, async (req, res) => {
+  try {
+    const deleted = await HistoryEntry.findOneAndDelete({ _id: req.params.id, userId: req.user.sub });
+    if (!deleted) return res.status(404).json({ error: 'Entry not found.' });
+    res.status(204).end();
+  } catch {
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 router.delete('/', requireAuth, async (req, res) => {
   try {
     await HistoryEntry.deleteMany({ userId: req.user.sub });

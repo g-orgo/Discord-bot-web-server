@@ -2,6 +2,9 @@ const AUTH_LIMIT = 10;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const authAttempts = new Map();
 
+/** Clears all tracked attempts. Used in tests to prevent cross-test pollution. */
+export function resetRateLimit() { authAttempts.clear(); }
+
 export function rateLimit(req, res, next) {
   const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
   const now = Date.now();
