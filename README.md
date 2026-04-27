@@ -55,6 +55,7 @@ BOT_SECRET=raptor-bot-secret-change-in-prod
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
+| `GET` | `/discord/history` | `X-Bot-Secret` header | Returns up to 50 history entries by `discordUsername` (rate-limited to ~20 req/min per IP) |
 | `POST` | `/discord/history` | `X-Bot-Secret` header | Save a history entry linked by `discordUsername` (source: `discord`) |
 
 ## Architecture
