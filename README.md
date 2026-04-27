@@ -26,8 +26,8 @@ JWT_SECRET=raptor-dev-secret-change-in-prod
 ADMIN_EMAIL=admin@raptor.local
 ADMIN_PASSWORD=raptor123
 CORS_ORIGIN=http://localhost:5173
-MONGODB_URI=mongodb://localhost:27017/raptor
-BOT_SECRET=raptor-bot-secret-change-in-prod
+DB_PATH=./data
+DISCORD_BOT_SECRET=raptor-bot-secret-change-in-prod
 ```
 
 ## Endpoints
@@ -37,7 +37,7 @@ BOT_SECRET=raptor-bot-secret-change-in-prod
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/` | No | Health check |
-| `POST` | `/auth/register` | No | Register → `{ token, email, displayName, discordUsername }` |
+| `POST` | `/auth/register` | No | Register → `{ token, email, displayName, discordUsername }` (`discordUsername` is optional) |
 | `POST` | `/auth/login` | No | Login → `{ token, email, displayName, discordUsername }` |
 | `GET` | `/auth/me` | Bearer JWT | Returns the authenticated user's profile |
 | `PUT` | `/auth/profile` | Bearer JWT | Update `discordUsername` |
@@ -56,7 +56,7 @@ BOT_SECRET=raptor-bot-secret-change-in-prod
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/discord/history` | `X-Bot-Secret` header | Returns up to 50 history entries by `discordUsername` (rate-limited to ~20 req/min per IP) |
-| `POST` | `/discord/history` | `X-Bot-Secret` header | Save a history entry linked by `discordUsername` (source: `discord`) |
+| `POST` | `/discord/history` | `X-Bot-Secret` header | Save a history entry linked by `discordUsername` (source: `discord`); if no user exists, stores pending history for up to 24h |
 
 ## Architecture
 
@@ -71,6 +71,8 @@ Express application. Entry point is `app.js`; routes split under `src/routes/`, 
 **User store:** MongoDB via Mongoose (`User` model). Seeded with one admin user from env vars on startup — data persists across restarts.
 
 **Real-time history:** `GET /auth/history/stream` opens a Server-Sent Events connection. The server pushes a `history:new` event each time a new entry is saved for that user (both from the web and from the Discord bot).
+
+**Pending Discord history:** when the bot sends `POST /discord/history` for a `discordUsername` not yet linked to a user, the server stores a pending entry with a 24-hour TTL. If the user links that Discord username (during register or via `PUT /auth/profile`) before expiration, pending entries are moved into the user's history automatically.
 
 ## Related services
 
