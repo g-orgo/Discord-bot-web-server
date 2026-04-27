@@ -2,9 +2,48 @@ import { Router } from 'express';
 import { User } from '../models/User.js';
 import { HistoryEntry } from '../models/HistoryEntry.js';
 import { requireBotKey } from '../middleware/requireBotKey.js';
+import { discordHistoryReadRateLimit } from '../middleware/rateLimit.js';
 import { emitToUser } from '../sse.js';
 
 const router = Router();
+
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+router.get('/history', requireBotKey, discordHistoryReadRateLimit, async (req, res) => {
+  const discordUsername = req.query?.discordUsername;
+
+  if (typeof discordUsername !== 'string' || !discordUsername.trim()) {
+    return res.status(400).json({ error: 'discordUsername query param is required.' });
+  }
+
+  try {
+    const user = await User.findOne({
+      discordUsername: { $regex: new RegExp(`^${escapeRegex(discordUsername.trim())}$`, 'i') },
+    }).lean();
+
+    if (!user) return res.json([]);
+
+    const entries = await HistoryEntry.find({ userId: user._id })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    return res.json(entries.map(e => ({
+      id: e._id.toString(),
+      userMessage: e.userMessage,
+      botResponse: e.botResponse,
+      model: e.model,
+      source: e.source ?? 'web',
+      timestamp: e.createdAt,
+      sessionId: e.sessionId ?? null,
+    })));
+  } catch (err) {
+    console.error('[discord/history][GET] Unexpected error:', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
 
 /**
  * POST /discord/history
@@ -21,7 +60,7 @@ router.post('/history', requireBotKey, async (req, res) => {
   }
 
   try {
-    const user = await User.findOne({ discordUsername: { $regex: new RegExp(`^${discordUsername.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }).lean();
+    const user = await User.findOne({ discordUsername: { $regex: new RegExp(`^${escapeRegex(discordUsername.trim())}$`, 'i') } }).lean();
     if (!user) {
       console.warn(`[discord/history] No user found with discordUsername: "${discordUsername.trim()}"`);
       return res.status(204).end();

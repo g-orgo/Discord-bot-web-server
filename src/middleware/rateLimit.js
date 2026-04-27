@@ -1,6 +1,18 @@
+import expressRateLimit from 'express-rate-limit';
+
 const AUTH_LIMIT = 10;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const authAttempts = new Map();
+const DISCORD_HISTORY_READ_LIMIT = 20;
+const DISCORD_HISTORY_READ_WINDOW_MS = 60 * 1000;
+
+export const discordHistoryReadRateLimit = expressRateLimit({
+  windowMs: DISCORD_HISTORY_READ_WINDOW_MS,
+  max: DISCORD_HISTORY_READ_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' },
+});
 
 /** Clears all tracked attempts. Used in tests to prevent cross-test pollution. */
 export function resetRateLimit() { authAttempts.clear(); }
