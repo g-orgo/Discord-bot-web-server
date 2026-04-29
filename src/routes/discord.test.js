@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../createApp.js';
 import { User } from '../models/User.js';
 import { HistoryEntry } from '../models/HistoryEntry.js';
+import { PendingHistoryEntry } from '../models/PendingHistoryEntry.js';
 import '../test/setup.js';
 
 const app = createApp();
@@ -43,6 +44,26 @@ describe('GET /discord/history', () => {
     expect(res.body[0].source).toBe('discord');
   });
 
+  it('returns pending entries when no user is registered yet', async () => {
+    await PendingHistoryEntry.create({
+      discordUsernameNormalized: 'futureuser',
+      userMessage: 'future hello',
+      botResponse: 'future hi',
+      source: 'discord',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+
+    const res = await request(app)
+      .get('/discord/history')
+      .set(botHeader)
+      .query({ discordUsername: 'FutureUser' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].userMessage).toBe('future hello');
+    expect(res.body[0].source).toBe('discord');
+  });
+
   it('rate limits after about 20 requests/min per IP', async () => {
     await User.create({
       email: 'discord-user-2@raptor.dev',
@@ -66,5 +87,27 @@ describe('GET /discord/history', () => {
     }
 
     expect(limited).toBe(true);
+  });
+});
+
+describe('POST /discord/history', () => {
+  it('stores pending history when user does not exist', async () => {
+    const before = Date.now();
+
+    const res = await request(app)
+      .post('/discord/history')
+      .set(botHeader)
+      .send({
+        discordUsername: 'NewDiscordUser',
+        userMessage: 'hello from discord',
+        botResponse: 'hello from bot',
+      });
+
+    expect(res.status).toBe(204);
+
+    const pending = await PendingHistoryEntry.findOne({ discordUsernameNormalized: 'newdiscorduser' }).lean();
+    expect(pending).not.toBeNull();
+    expect(pending.userMessage).toBe('hello from discord');
+    expect(new Date(pending.expiresAt).getTime()).toBeGreaterThan(before + (23 * 60 * 60 * 1000));
   });
 });

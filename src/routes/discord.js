@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { User } from '../models/User.js';
 import { HistoryEntry } from '../models/HistoryEntry.js';
+import { PendingHistoryEntry } from '../models/PendingHistoryEntry.js';
 import { requireBotKey } from '../middleware/requireBotKey.js';
 import { discordHistoryReadRateLimit } from '../middleware/rateLimit.js';
 import { emitToUser } from '../sse.js';
+import { normalizeDiscordUsername, queuePendingDiscordHistory } from '../history/pendingDiscordHistory.js';
 
 const router = Router();
 
@@ -23,7 +25,24 @@ router.get('/history', requireBotKey, discordHistoryReadRateLimit, async (req, r
       discordUsername: { $regex: new RegExp(`^${escapeRegex(discordUsername.trim())}$`, 'i') },
     }).lean();
 
-    if (!user) return res.json([]);
+    if (!user) {
+      const pendingEntries = await PendingHistoryEntry.find({
+        discordUsernameNormalized: normalizeDiscordUsername(discordUsername),
+      })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+
+      return res.json(pendingEntries.map(e => ({
+        id: e._id.toString(),
+        userMessage: e.userMessage,
+        botResponse: e.botResponse,
+        model: e.model,
+        source: e.source ?? 'discord',
+        timestamp: e.createdAt,
+        sessionId: null,
+      })));
+    }
 
     const entries = await HistoryEntry.find({ userId: user._id })
       .sort({ createdAt: -1 })
@@ -63,6 +82,12 @@ router.post('/history', requireBotKey, async (req, res) => {
     const user = await User.findOne({ discordUsername: { $regex: new RegExp(`^${escapeRegex(discordUsername.trim())}$`, 'i') } }).lean();
     if (!user) {
       console.warn(`[discord/history] No user found with discordUsername: "${discordUsername.trim()}"`);
+      await queuePendingDiscordHistory({
+        discordUsername,
+        userMessage,
+        botResponse,
+        model,
+      });
       return res.status(204).end();
     }
 

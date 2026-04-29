@@ -5,9 +5,16 @@ import '../test/setup.js';
 
 const app = createApp();
 
+let userSequence = 0;
+
 async function registerAndLogin() {
-  const email = `user-${Date.now()}@raptor.dev`;
-  const reg = await request(app).post('/auth/register').send({ email, password: 'secret123', displayName: 'Tester' });
+  userSequence += 1;
+  const email = `user-${Date.now()}-${userSequence}@raptor.dev`;
+  const reg = await request(createApp())
+    .post('/auth/register')
+    .send({ email, password: 'secret123', displayName: 'Tester' });
+  expect(reg.status).toBe(201);
+  expect(reg.body.token).toBeTruthy();
   return reg.body.token;
 }
 
