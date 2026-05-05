@@ -48,6 +48,9 @@ DISCORD_BOT_SECRET=raptor-bot-secret-change-in-prod
 |--------|------|------|-------------|
 | `GET` | `/auth/history` | Bearer JWT | Returns all history entries for the authenticated user |
 | `POST` | `/auth/history` | Bearer JWT | Save a new history entry (source: `web`) |
+| `PATCH` | `/auth/history/:id/session` | Bearer JWT | Attach or backfill `sessionId` for one history entry |
+| `DELETE` | `/auth/history/session/:sessionId` | Bearer JWT | Delete all entries from one chat session |
+| `DELETE` | `/auth/history/entry/:id` | Bearer JWT | Delete a single history entry |
 | `DELETE` | `/auth/history` | Bearer JWT | Delete all history for the authenticated user |
 | `GET` | `/auth/history/stream` | JWT query param | SSE stream — pushes `history:new` events in real time |
 
@@ -73,6 +76,8 @@ Express application. Entry point is `app.js`; routes split under `src/routes/`, 
 **Real-time history:** `GET /auth/history/stream` opens a Server-Sent Events connection. The server pushes a `history:new` event each time a new entry is saved for that user (both from the web and from the Discord bot).
 
 **Pending Discord history:** when the bot sends `POST /discord/history` for a `discordUsername` not yet linked to a user, the server stores a pending entry with a 24-hour TTL. If the user links that Discord username (during register or via `PUT /auth/profile`) before expiration, pending entries are moved into the user's history automatically.
+
+**Session-aware history restore:** web history entries can include a `sessionId`. The frontend uses this to group multiple exchanges in one conversation and restore complete sessions instead of isolated messages.
 
 ## Related services
 
