@@ -10,6 +10,10 @@ import { claimPendingDiscordHistoryForUser } from '../history/pendingDiscordHist
 
 const router = Router();
 
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function isDiscordUsernameTaken(discordUsername, excludeUserId = null) {
   if (!discordUsername) return false;
 

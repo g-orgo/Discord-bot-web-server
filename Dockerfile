@@ -11,6 +11,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+# Pre-download MongoDB binary at build time so the first startup is fast
+RUN node --input-type=module --eval "import { MongoBinary } from 'mongodb-memory-server-core'; await MongoBinary.getPath(); console.log('[docker] MongoDB binary ready');"
+
 COPY app.js ./
 COPY src/ ./src/
 
